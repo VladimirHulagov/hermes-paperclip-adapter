@@ -132,12 +132,13 @@ function checkApiKeys(): AdapterEnvironmentCheck | null {
   const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
   const hasOpenAI = !!process.env.OPENAI_API_KEY;
+  const hasZai = !!process.env.ZAI_API_KEY || !!process.env.GLM_API_KEY;
 
-  if (!hasAnthropic && !hasOpenRouter && !hasOpenAI) {
+  if (!hasAnthropic && !hasOpenRouter && !hasOpenAI && !hasZai) {
     return {
       level: "warn",
       message: "No LLM API keys found in environment",
-      hint: "Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY. Hermes may also have keys configured in ~/.hermes/.env",
+      hint: "Set ANTHROPIC_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, GLM_API_KEY, or ZAI_API_KEY. Hermes may also have keys configured in ~/.hermes/.env",
       code: "hermes_no_api_keys",
     };
   }
@@ -146,6 +147,7 @@ function checkApiKeys(): AdapterEnvironmentCheck | null {
   if (hasAnthropic) providers.push("Anthropic");
   if (hasOpenRouter) providers.push("OpenRouter");
   if (hasOpenAI) providers.push("OpenAI");
+  if (hasZai) providers.push("Z.AI");
 
   return {
     level: "info",

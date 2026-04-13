@@ -302,6 +302,35 @@ export async function execute(
   const taskId = cfgString(ctx.config?.taskId);
   if (taskId) env.PAPERCLIP_TASK_ID = taskId;
 
+  // Per-agent HERMES_HOME for isolation (memory, skills, sessions)
+  const agentId = cfgString(ctx.agent?.id);
+  if (agentId) {
+    const homeDir = `/paperclip/hermes-instances/${agentId}`;
+    env.HERMES_HOME = homeDir;
+    const fs = await import("node:fs");
+    fs.mkdirSync(homeDir, { recursive: true });
+    const cfgPath = `${homeDir}/config.yaml`;
+    const sharedCfg = "/opt/hermes-shared-config/config.yaml";
+    if (!fs.existsSync(cfgPath) && fs.existsSync(sharedCfg)) {
+      fs.copyFileSync(sharedCfg, cfgPath);
+    }
+  }
+
+  // SSH terminal backend — Hermes executes commands on a remote server
+  const sshHost = cfgString(config.sshHost);
+  const sshUser = cfgString(config.sshUser);
+  const sshPort = cfgString(config.sshPort);
+  const sshKey = cfgString(config.sshKey);
+  const sshCwd = cfgString(config.sshCwd);
+  if (sshHost && sshUser) {
+    env.TERMINAL_ENV = "ssh";
+    env.TERMINAL_SSH_HOST = sshHost;
+    env.TERMINAL_SSH_USER = sshUser;
+    if (sshPort) env.TERMINAL_SSH_PORT = sshPort;
+    if (sshKey) env.TERMINAL_SSH_KEY = sshKey;
+    if (sshCwd) env.TERMINAL_CWD = sshCwd;
+  }
+
   const userEnv = config.env as Record<string, string> | undefined;
   if (userEnv && typeof userEnv === "object") {
     Object.assign(env, userEnv);
@@ -321,6 +350,12 @@ export async function execute(
     "stdout",
     `[hermes] Starting Hermes Agent (model=${model}, timeout=${timeoutSec}s)\n`,
   );
+  if (sshHost && sshUser) {
+    await ctx.onLog(
+      "stdout",
+      `[hermes] SSH terminal backend: ${sshUser}@${sshHost}${sshPort ? `:${sshPort}` : ""}\n`,
+    );
+  }
   if (prevSessionId) {
     await ctx.onLog(
       "stdout",

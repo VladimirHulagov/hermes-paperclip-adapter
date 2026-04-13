@@ -22,6 +22,7 @@ export const label = ADAPTER_LABEL;
  * depend on the user's configured API keys and provider.
  */
 export const models: { id: string; label: string }[] = [
+  { id: "glm-5.1", label: "GLM-5.1 (ZAI)" },
   { id: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4 (Anthropic)" },
   { id: "anthropic/claude-opus-4", label: "Claude Opus 4 (Anthropic)" },
   { id: "openai/gpt-4.1", label: "GPT-4.1 (OpenAI)" },
@@ -49,7 +50,7 @@ tools, persistent memory, session persistence, skills, and MCP support.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| model | string | anthropic/claude-sonnet-4 | Model to use (provider/model format) |
+| model | string | glm-5.1 | Model to use (provider/model format) |
 | provider | string | (auto) | API provider: auto, openrouter, nous, openai-codex, zai, kimi-coding, minimax, minimax-cn. Usually not needed — Hermes auto-detects from model name. |
 | timeoutSec | number | 300 | Execution timeout in seconds |
 | graceSec | number | 10 | Grace period after SIGTERM before SIGKILL |
@@ -59,6 +60,23 @@ tools, persistent memory, session persistence, skills, and MCP support.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | toolsets | string | (all) | Comma-separated toolsets to enable (e.g. "terminal,file,web") |
+
+## SSH Terminal Backend
+
+Hermes can execute all terminal commands on a remote server via SSH.
+When \`sshHost\` and \`sshUser\` are set, Hermes uses its built-in SSH
+terminal backend with persistent shell, ControlMaster connection pooling,
+and automatic credential sync.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| sshHost | string | (none) | SSH server hostname or IP |
+| sshUser | string | (none) | SSH username (required with sshHost) |
+| sshPort | string | "22" | SSH port |
+| sshKey | string | (ssh-agent) | Path to SSH private key |
+| sshCwd | string | "~" | Working directory on the remote server |
+
+When these are not set, Hermes runs terminal commands locally.
 
 ## Session & Workspace
 

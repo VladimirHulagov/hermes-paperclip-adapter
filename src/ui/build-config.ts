@@ -52,6 +52,19 @@ export function buildHermesConfig(
     ac.extraArgs = existing;
   }
 
+  // SSH terminal backend — passed via envBindings or env object
+  const sshEnv: Record<string, string> = {};
+  const eb = v.envBindings as Record<string, unknown> | undefined;
+  if (eb?.sshHost && typeof eb.sshHost === "string") {
+    sshEnv.TERMINAL_ENV = "ssh";
+    sshEnv.TERMINAL_SSH_HOST = eb.sshHost;
+    if (eb.sshUser && typeof eb.sshUser === "string") sshEnv.TERMINAL_SSH_USER = eb.sshUser;
+    if (eb.sshPort && typeof eb.sshPort === "string") sshEnv.TERMINAL_SSH_PORT = eb.sshPort;
+    if (eb.sshKey && typeof eb.sshKey === "string") sshEnv.TERMINAL_SSH_KEY = eb.sshKey;
+    if (eb.sshCwd && typeof eb.sshCwd === "string") sshEnv.TERMINAL_CWD = eb.sshCwd;
+    ac.env = { ...(ac.env as Record<string, string> || {}), ...sshEnv };
+  }
+
   // Prompt template
   if (v.promptTemplate) {
     ac.promptTemplate = v.promptTemplate;
