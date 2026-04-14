@@ -175,7 +175,7 @@ export async function execute(
 
   try {
     const response = await fetch(
-      `http://localhost:${port}/v1/chat/completions`,
+      `http://hermes-gateway:${port}/v1/chat/completions`,
       {
         method: "POST",
         headers: {
