@@ -1,15 +1,8 @@
-/**
- * Server-side adapter module exports.
- */
-
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
 import { DEFAULT_MODEL } from "../shared/constants.js";
 
 export { execute } from "./execute.js";
 export { testEnvironment } from "./test.js";
-
-const HERMES_SHARED_CONFIG = "/opt/hermes-shared-config/config.yaml";
 
 export async function detectModel(): Promise<{
   model: string;
@@ -17,49 +10,26 @@ export async function detectModel(): Promise<{
   source: string;
   candidates?: string[];
 } | null> {
-  try {
-    const raw = await readFile(HERMES_SHARED_CONFIG, "utf-8");
-    let model: string | undefined;
-    let provider: string | undefined;
-    for (const line of raw.split("\n")) {
-      const m = line.match(/^\s*default:\s*(.+)$/);
-      if (m && !model) model = m[1].trim();
-      const p = line.match(/^\s+provider:\s*(.+)$/);
-      if (p && !provider) provider = p[1].trim();
-    }
-    if (model) {
-      return {
-        model,
-        provider: provider || "auto",
-        source: HERMES_SHARED_CONFIG,
-        candidates: [],
-      };
-    }
-  } catch {
-    // config.yaml not readable — fall through
-  }
   return {
     model: DEFAULT_MODEL,
     provider: "zai",
-    source: "fallback (config.yaml not found)",
+    source: "gateway profile (static)",
+    candidates: [],
   };
 }
 
 import type { AdapterSessionCodec } from "@paperclipai/adapter-utils";
 
 function readNonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
 }
 
-/**
- * Session codec for structured validation and migration of session parameters.
- *
- * Hermes Agent uses a single `sessionId` for cross-heartbeat session continuity
- * via the `--resume` CLI flag. The codec validates and normalizes this field.
- */
 export const sessionCodec: AdapterSessionCodec = {
   deserialize(raw: unknown) {
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+      return null;
     const record = raw as Record<string, unknown>;
     const sessionId =
       readNonEmptyString(record.sessionId) ??
@@ -77,6 +47,53 @@ export const sessionCodec: AdapterSessionCodec = {
   },
   getDisplayId(params: Record<string, unknown> | null) {
     if (!params) return null;
-    return readNonEmptyString(params.sessionId) ?? readNonEmptyString(params.session_id);
+    return (
+      readNonEmptyString(params.sessionId) ??
+      readNonEmptyString(params.session_id)
+    );
   },
 };
+
+interface SkillEntry {
+  name: string;
+  enabled: boolean;
+  source: string;
+}
+
+async function readSkillsFromDir(dir: string): Promise<SkillEntry[]> {
+  try {
+    const files = await readdir(dir);
+    const skills: SkillEntry[] = [];
+    for (const file of files) {
+      if (file.endsWith(".md")) {
+        skills.push({
+          name: file.replace(/\.md$/, ""),
+          enabled: true,
+          source: "profile",
+        });
+      }
+    }
+    return skills;
+  } catch {
+    return [];
+  }
+}
+
+export async function listSkills(ctx: any): Promise<any> {
+  const agentId = ctx?.agent?.id;
+  if (!agentId) {
+    return { desiredSkills: [], persistedSkills: [] };
+  }
+
+  const skillsDir = `/paperclip/hermes-instances/${agentId}/skills`;
+  const skills = await readSkillsFromDir(skillsDir);
+
+  return {
+    desiredSkills: skills,
+    persistedSkills: skills,
+  };
+}
+
+export async function syncSkills(ctx: any, desiredSkills: any[]): Promise<any> {
+  return listSkills(ctx);
+}

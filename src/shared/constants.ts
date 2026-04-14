@@ -50,3 +50,7 @@ export const TOOL_OUTPUT_PREFIX = "┊";
 
 /** Prefix for Hermes thinking blocks. */
 export const THINKING_PREFIX = "💭";
+
+export const GATEWAY_MODE = true;
+export const GATEWAY_PORTS_FILE = "/run/gateway-ports/ports.json";
+export const GATEWAY_API_KEY = process.env.HERMES_API_SERVER_KEY || "";
