@@ -14,22 +14,14 @@ import { ADAPTER_TYPE, ADAPTER_LABEL } from "./shared/constants.js";
 export const type = ADAPTER_TYPE;
 export const label = ADAPTER_LABEL;
 
+export const DEFAULT_HERMES_LOCAL_MODEL = DEFAULT_MODEL;
+
 /**
- * Models available through Hermes Agent.
- *
- * Hermes supports any model via OpenRouter, Anthropic, or OpenAI APIs.
- * This list contains commonly used defaults — the actual available models
- * depend on the user's configured API keys and provider.
+ * Minimal static fallback. Real model list is discovered dynamically
+ * via listHermesModels() which queries provider APIs based on env keys.
  */
 export const models: { id: string; label: string }[] = [
-  { id: "glm-5.1", label: "GLM-5.1 (ZAI)" },
-  { id: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4 (Anthropic)" },
-  { id: "anthropic/claude-opus-4", label: "Claude Opus 4 (Anthropic)" },
-  { id: "openai/gpt-4.1", label: "GPT-4.1 (OpenAI)" },
-  { id: "openai/o3", label: "o3 (OpenAI)" },
-  { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro (Google)" },
-  { id: "deepseek/deepseek-r1", label: "DeepSeek R1" },
-  { id: "anthropic/claude-haiku-3.5", label: "Claude Haiku 3.5 (Anthropic)" },
+  { id: DEFAULT_MODEL, label: DEFAULT_MODEL },
 ];
 
 /**

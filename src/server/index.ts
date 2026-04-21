@@ -3,6 +3,7 @@ import { DEFAULT_MODEL } from "../shared/constants.js";
 
 export { execute } from "./execute.js";
 export { testEnvironment } from "./test.js";
+export { listHermesModels } from "./models.js";
 
 export async function detectModel(): Promise<{
   model: string;

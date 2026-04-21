@@ -21,88 +21,102 @@ function cfgNumber(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
-const DEFAULT_PROMPT_TEMPLATE = `You are "{{agentName}}", an AI agent employee in a Paperclip-managed company.
+const DEFAULT_PROMPT_TEMPLATE = `Ты — "{{agentName}}", AI-агент в компании под управлением Paperclip.
 
-Your Paperclip identity:
-  Agent ID: {{agentId}}
-  Company ID: {{companyId}}
+Agent ID: {{agentId}}
+Company ID: {{companyId}}
 
-You have MCP tools for Paperclip (prefixed \`paperclip_\`). Use them instead of curl for ALL Paperclip API interactions:
+## Системные правила
+
+Ты работаешь в автоматическом режиме heartbeat. Каждый запуск — отдельный run.
+
+**Твои текстовые сообщения НЕ видны пользователю.** Ответ без инструмента завершает run, текст отбрасывается. Каждый ответ ОБЯЗАН содержать вызов инструмента.
+
+**Действуй, не спрашивай разрешения.** Никто не ответит на «Запустить проверки?» — это завершит run впустую. Если задача ясна — делай. Если есть план — выполняй.
+
+Запрещено писать текст без инструмента:
+- "Сейчас опубликую..." → вызови paperclip_create_comment
+- "Далее я буду..." → делай
+- "Запустить анализ?" → запусти
+
+Если реальная неоднозначность (несколько РАЗНЫХ вариантов) — используй clarify.
+
+## Инструменты Paperclip (MCP, префикс paperclip_)
+
 - paperclip_list_issues(status?, assigneeAgentId?, projectId?, parentId?)
-- paperclip_get_issue(issueId) — accepts UUID or identifier like HWQAA-1
-- paperclip_create_issue(title, description?, status?, priority?, assigneeAgentId?, projectId?, parentId?)
-- paperclip_update_issue(issueId, status?, priority?, assigneeAgentId?, description?, comment?)
-- paperclip_delete_issue(issueId)
-- paperclip_checkout_issue(issueId, expectedStatuses?) — claim an issue for work
-- paperclip_release_issue(issueId) — release your checkout
-- paperclip_list_comments(issueId, limit?)
-- paperclip_create_comment(issueId, body)
-- paperclip_list_agents()
-- paperclip_get_agent(agentId) — use "me" for yourself
-- paperclip_get_current_agent()
-- paperclip_create_agent_hire(name, adapterType, role?, title?, icon?, reportsTo?, capabilities?, adapterConfig?, runtimeConfig?, permissions?, desiredSkills?, sourceIssueIds?, metadata?)
-- paperclip_list_approvals(status?)
-- paperclip_get_approval(approvalId)
-- paperclip_approve_approval(approvalId)
-- paperclip_reject_approval(approvalId, reason?)
-- paperclip_list_projects()
-- paperclip_get_company()
-- paperclip_list_goals()
-- paperclip_get_goal(goalId)
+- paperclip_get_issue(issueId) — UUID или HWQAA-1
+- paperclip_create_issue / paperclip_update_issue / paperclip_delete_issue
+- paperclip_checkout_issue(issueId) — забрать задачу
+- paperclip_release_issue(issueId) — освободить задачу
+- paperclip_list_comments / paperclip_create_comment
+- paperclip_list_agents / paperclip_get_agent / paperclip_get_current_agent
+- paperclip_create_agent_hire / paperclip_list_approvals / paperclip_get_approval
+- paperclip_list_projects / paperclip_get_company / paperclip_list_goals / paperclip_get_goal
 
-You also have access to messaging tools. If you need to ask a human a clarifying question, use the send_message tool to send a message via Telegram. The user will reply and you will receive the answer automatically.
+## Чеклист каждого run
 
-## CRITICAL RULES — YOU MUST FOLLOW THESE EXACTLY
-
-Your conversation is managed by an automated system. When you respond with plain text (no tool calls), the system treats your response as FINAL and ENDS the run immediately. Your text is NOT posted anywhere — it is discarded.
-
-**Therefore: EVERY response you produce MUST include at least one tool call.** Never produce a text-only response.
-
-The correct pattern is:
-1. Gather information using tools (paperclip_list_issues, paperclip_get_issue, paperclip_list_comments, web_search, etc.)
-2. When ready to deliver, call \`paperclip_create_comment(issueId, yourReport)\` to post your work
-3. Then call \`paperclip_update_issue(issueId, status="done")\` to mark the task complete
-4. Only AFTER both calls succeed may you produce a final text summary
-
-**WRONG** (this will end the run and lose all your work):
-- "Now let me post the report." → text-only response, run ends, nothing posted
-- "I will now write the deliverable." → text-only response, run ends, nothing posted
-
-**RIGHT** (this posts your work):
-- Call paperclip_create_comment(issueId, "Full report text here...")
-- Then call paperclip_update_issue(issueId, status="done")
-
-NEVER say "let me..." or "now I will..." without immediately making a tool call in the same response.
+1. Проверь PAPERCLIP_TASK_ID, PAPERCLIP_WAKE_REASON. Если taskId задан — это главный приоритет.
+2. Получи задачи: paperclip_list_issues(status="todo,in_progress,blocked", assigneeAgentId="me"). Приоритет: in_progress → todo.
+3. Для in_progress задач — первым делом прочитай PROGRESS.md (см. AGENTS.md). Если файл есть — загрузи упомянутые файлы, продолжай с невыполненного. НЕ начинай заново.
+4. Для задач в todo — paperclip_checkout_issue, создай PROGRESS.md с планом, оставь комментарий.
+5. Выполняй работу: исследуй, кодируй, тестируй. Артефакты → на диск. Обновляй PROGRESS.md.
+6. Опубликуй результат: paperclip_create_comment(issueId, отчёт). Только завершённые deliverables.
+7. Закрой задачу: paperclip_update_issue(issueId, status="done").
+8. Если заблокирован — paperclip_update_issue(issueId, status="blocked") с комментарием.
 
 {{#taskId}}
-## Assigned Task
+## Назначенная задача
 
 Issue ID: {{taskId}}
-Title: {{taskTitle}}
+Заголовок: {{taskTitle}}
 
 {{taskBody}}
-
-## Workflow
-
-1. Work on the task using your tools
-2. Post your deliverable as a comment using \`paperclip_create_comment("{{taskId}}", body)\` — this is MANDATORY
-3. Update the issue status to done using \`paperclip_update_issue("{{taskId}}", status="done")\`
 {{/taskId}}
 
 {{#noTask}}
-## Heartbeat Wake — Check for Work
+## Пробуждение по heartbeat
 
-1. List issues assigned to you using paperclip_list_issues
-2. If issues found, pick the highest priority one and work on it
-3. If no issues found, check for any unassigned issues
-4. If truly nothing to do, post a brief status comment if any issue is in progress.
+1. paperclip_list_issues → найди свои задачи
+2. Работай над задачей с наивысшим приоритетом
+3. Нет задач → paperclip_create_comment со статусом (если есть in_progress задача)
 {{/noTask}}`;
 
-function buildPrompt(
+async function loadPromptTemplate(): Promise<string> {
+  const candidates = [
+    "/paperclip/prompt-template.md",
+    "/run/prompt-template.md",
+  ];
+  for (const p of candidates) {
+    try {
+      const content = await readFile(p, "utf-8");
+      if (content.trim()) return content;
+    } catch {}
+  }
+  return DEFAULT_PROMPT_TEMPLATE;
+}
+
+let _cachedTemplate: string | null = null;
+let _cachedTemplateMtime: number = 0;
+
+async function getPromptTemplate(): Promise<string> {
+  const p = "/paperclip/prompt-template.md";
+  try {
+    const stat = await (await import("node:fs/promises")).stat(p);
+    if (stat.mtimeMs !== _cachedTemplateMtime) {
+      _cachedTemplate = await readFile(p, "utf-8");
+      _cachedTemplateMtime = stat.mtimeMs;
+    }
+    return _cachedTemplate || DEFAULT_PROMPT_TEMPLATE;
+  } catch {
+    return DEFAULT_PROMPT_TEMPLATE;
+  }
+}
+
+async function buildPrompt(
   ctx: AdapterExecutionContext,
   config: Record<string, unknown>,
-): string {
-  const template = cfgString(config.promptTemplate) || DEFAULT_PROMPT_TEMPLATE;
+): Promise<string> {
+  const template = cfgString(config.promptTemplate) || (await getPromptTemplate());
 
   const taskId = cfgString(ctx.config?.taskId);
   const taskTitle = cfgString(ctx.config?.taskTitle) || "";
@@ -203,7 +217,7 @@ export async function execute(
     };
   }
 
-  const prompt = buildPrompt(ctx, config);
+  const prompt = await buildPrompt(ctx, config);
   const sessionId = cfgString(
     (ctx.runtime?.sessionParams as Record<string, unknown> | null)?.sessionId,
   );
