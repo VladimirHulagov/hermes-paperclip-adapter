@@ -26,43 +26,39 @@ const DEFAULT_PROMPT_TEMPLATE = `Ты — "{{agentName}}", AI-агент в ко
 Agent ID: {{agentId}}
 Company ID: {{companyId}}
 
-## Системные правила
+Ты работаешь в автоматическом режиме heartbeat. Каждый запуск — отдельный run. Между run контекст теряется, единственная связь — чеклист задачи (paperclip_set_checklist) и файлы на диске.
 
-Ты работаешь в автоматическом режиме heartbeat. Каждый запуск — отдельный run.
-
-**Твои текстовые сообщения НЕ видны пользователю.** Ответ без инструмента завершает run, текст отбрасывается. Каждый ответ ОБЯЗАН содержать вызов инструмента.
-
-**Действуй, не спрашивай разрешения.** Никто не ответит на «Запустить проверки?» — это завершит run впустую. Если задача ясна — делай. Если есть план — выполняй.
-
-Запрещено писать текст без инструмента:
-- "Сейчас опубликую..." → вызови paperclip_create_comment
-- "Далее я буду..." → делай
-- "Запустить анализ?" → запусти
-
-Если реальная неоднозначность (несколько РАЗНЫХ вариантов) — используй clarify.
+Действуй, не спрашивай разрешения. Если задача ясна — делай. Если есть план — выполняй. Если неясно — исследуй через инструменты.
 
 ## Инструменты Paperclip (MCP, префикс paperclip_)
 
-- paperclip_list_issues(status?, assigneeAgentId?, projectId?, parentId?)
-- paperclip_get_issue(issueId) — UUID или HWQAA-1
-- paperclip_create_issue / paperclip_update_issue / paperclip_delete_issue
-- paperclip_checkout_issue(issueId) — забрать задачу
-- paperclip_release_issue(issueId) — освободить задачу
+- paperclip_list_issues / paperclip_get_issue / paperclip_create_issue / paperclip_update_issue / paperclip_delete_issue
+- paperclip_checkout_issue / paperclip_release_issue
 - paperclip_list_comments / paperclip_create_comment
+- paperclip_set_checklist — установить чеклист задачи (массив {text, done}), заменяет полностью
 - paperclip_list_agents / paperclip_get_agent / paperclip_get_current_agent
-- paperclip_create_agent_hire / paperclip_list_approvals / paperclip_get_approval
-- paperclip_list_projects / paperclip_get_company / paperclip_list_goals / paperclip_get_goal
+- paperclip_list_projects / paperclip_get_company / paperclip_list_goals
+
+## Чеклист задачи
+
+paperclip_set_checklist — способ сохранить план и прогресс между run. Чеклист виден в UI задачи.
+1. После анализа задачи — вызови paperclip_set_checklist с планом шагов (все done=false)
+2. После каждого выполненного шага — обновляй чеклист (done=true для выполненных)
+3. Максимально 20 пунктов, текст до 200 символов
 
 ## Чеклист каждого run
 
-1. Проверь PAPERCLIP_TASK_ID, PAPERCLIP_WAKE_REASON. Если taskId задан — это главный приоритет.
-2. Получи задачи: paperclip_list_issues(status="todo,in_progress,blocked", assigneeAgentId="me"). Приоритет: in_progress → todo.
-3. Для in_progress задач — первым делом прочитай PROGRESS.md (см. AGENTS.md). Если файл есть — загрузи упомянутые файлы, продолжай с невыполненного. НЕ начинай заново.
-4. Для задач в todo — paperclip_checkout_issue, создай PROGRESS.md с планом, оставь комментарий.
-5. Выполняй работу: исследуй, кодируй, тестируй. Артефакты → на диск. Обновляй PROGRESS.md.
-6. Опубликуй результат: paperclip_create_comment(issueId, отчёт). Только завершённые deliverables.
-7. Закрой задачу: paperclip_update_issue(issueId, status="done").
-8. Если заблокирован — paperclip_update_issue(issueId, status="blocked") с комментарием.
+1. Если taskId задан — главный приоритет
+2. Если нет — paperclip_list_issues(status="todo,in_progress,blocked", assigneeAgentId="me")
+3. Для in_progress — paperclip_get_issue, изучи чеклист, продолжай с первого невыполненного
+4. Для todo — paperclip_checkout_issue, проанализируй, создай чеклист, оставь комментарий
+5. Выполняй работу через инструменты
+6. После каждого шага обновляй чеклист (paperclip_set_checklist с обновлённым done)
+7. Публикуй результаты: paperclip_create_comment(issueId, отчёт)
+8. Готово — paperclip_update_issue(issueId, status="done")
+9. Заблокирован — paperclip_update_issue(issueId, status="blocked")
+
+Run может быть прерван. Если что-то сделано — сразу paperclip_create_comment.
 
 {{#taskId}}
 ## Назначенная задача
@@ -78,8 +74,17 @@ Issue ID: {{taskId}}
 
 1. paperclip_list_issues → найди свои задачи
 2. Работай над задачей с наивысшим приоритетом
-3. Нет задач → paperclip_create_comment со статусом (если есть in_progress задача)
-{{/noTask}}`;
+3. Нет задач → paperclip_create_comment со статусом
+{{/noTask}}
+
+{{#wakeReason}}
+## Контекст пробуждения
+
+Причина: {{wakeReason}}
+{{#wakeCommentId}}
+Сначала прочитай комментарий-триггер: paperclip_list_comments(issueId="{{taskId}}")
+{{/wakeCommentId}}
+{{/wakeReason}}`;
 
 async function loadPromptTemplate(): Promise<string> {
   const candidates = [
@@ -112,16 +117,54 @@ async function getPromptTemplate(): Promise<string> {
   }
 }
 
+function buildInputMessage(
+  ctx: AdapterExecutionContext,
+): string {
+  const taskId = cfgString(ctx.context?.taskId) || cfgString(ctx.context?.issueId) || "";
+  const taskTitle = cfgString(ctx.context?.taskTitle) || "";
+  const taskBody = cfgString(ctx.context?.taskBody) || "";
+  const wakeReason = cfgString(ctx.context?.wakeReason) || "";
+  const agentName = ctx.agent?.name || "Agent";
+
+  if (taskId) {
+    let msg = `[HEARTBEAT RUN] ${agentName} — задача назначена.\n\n`;
+    msg += `Issue: ${taskTitle} (${taskId})\n`;
+    if (taskBody) {
+      msg += `\n${taskBody}\n`;
+    }
+    if (wakeReason) {
+      msg += `\nПричина пробуждения: ${wakeReason}\n`;
+    }
+    msg += `\nДействуй: вызови инструменты, выполни работу, обнови чеклист, оставь комментарий с результатом. Не пиши планы — делай.`;
+    return msg;
+  }
+
+  let msg = `[HEARTBEAT RUN] ${agentName} — heartbeat без конкретной задачи.\n\n`;
+  msg += `1. Вызови paperclip_list_issues(status="todo,in_progress,blocked", assigneeAgentId="me")\n`;
+  msg += `2. Выбери задачу с наивысшим приоритетом\n`;
+  msg += `3. Для in_progress — продолжай с чеклиста\n`;
+  msg += `4. Для todo — checkout, создай чеклист, начни работу\n`;
+  msg += `5. Нет задач — оставь комментарий со статусом\n`;
+  msg += `\nДействуй через инструменты. Не пиши планы — делай.`;
+  if (wakeReason) {
+    msg += `\n\nПричина пробуждения: ${wakeReason}`;
+  }
+  return msg;
+}
+
 async function buildPrompt(
   ctx: AdapterExecutionContext,
   config: Record<string, unknown>,
 ): Promise<string> {
   const template = cfgString(config.promptTemplate) || (await getPromptTemplate());
 
-  const taskId = cfgString(ctx.config?.taskId);
-  const taskTitle = cfgString(ctx.config?.taskTitle) || "";
-  const taskBody = cfgString(ctx.config?.taskBody) || "";
+  const taskId = cfgString(ctx.context?.taskId) || cfgString(ctx.context?.issueId);
+  const taskTitle = cfgString(ctx.context?.taskTitle) || "";
+  const taskBody = cfgString(ctx.context?.taskBody) || "";
   const agentName = ctx.agent?.name || "Hermes Agent";
+
+  const wakeReason = cfgString(ctx.context?.wakeReason) || "";
+  const wakeCommentId = cfgString(ctx.context?.wakeCommentId) || cfgString(ctx.context?.commentId) || "";
 
   const vars: Record<string, unknown> = {
     agentId: ctx.agent?.id || "",
@@ -131,6 +174,8 @@ async function buildPrompt(
     taskId: taskId || "",
     taskTitle,
     taskBody,
+    wakeReason,
+    wakeCommentId,
   };
 
   let rendered = template;
@@ -141,6 +186,14 @@ async function buildPrompt(
   rendered = rendered.replace(
     /\{\{#noTask\}\}([\s\S]*?)\{\{\/noTask\}\}/g,
     taskId ? "" : "$1",
+  );
+  rendered = rendered.replace(
+    /\{\{#wakeReason\}\}([\s\S]*?)\{\{\/wakeReason\}\}/g,
+    wakeReason ? "$1" : "",
+  );
+  rendered = rendered.replace(
+    /\{\{#wakeCommentId\}\}([\s\S]*?)\{\{\/wakeCommentId\}\}/g,
+    wakeCommentId ? "$1" : "",
   );
   return renderTemplate(rendered, vars);
 }
@@ -218,6 +271,7 @@ export async function execute(
   }
 
   const prompt = await buildPrompt(ctx, config);
+  const inputMessage = buildInputMessage(ctx);
   const sessionId = cfgString(
     (ctx.runtime?.sessionParams as Record<string, unknown> | null)?.sessionId,
   );
@@ -244,10 +298,11 @@ export async function execute(
       method: "POST",
       headers,
       body: JSON.stringify({
-        input: "Work on the assigned task",
+        input: inputMessage,
         instructions: prompt,
         session_id: sessionId || `paperclip-${agentId}`,
         paperclip_api_key: ctx.authToken || undefined,
+        heartbeat_run_id: ctx.runId || undefined,
       }),
       signal: controller.signal,
     });
@@ -363,6 +418,7 @@ export async function execute(
           await ctx.onLog("stdout", `  ✓ ${(event.tool as string || "unknown")}${dur}${err}\n`);
         } else if (eventType === "run.completed") {
           finalOutput = (event.output as string) || "";
+          if (finalOutput === "(empty)") finalOutput = "";
           usage = (event.usage as typeof usage) || null;
           await ctx.onLog("stdout", `\n[hermes] Run completed (${finalOutput.length} chars)\n`);
         } else if (eventType === "run.failed") {
