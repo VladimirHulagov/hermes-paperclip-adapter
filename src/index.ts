@@ -9,7 +9,7 @@
  * @packageDocumentation
  */
 
-import { ADAPTER_TYPE, ADAPTER_LABEL } from "./shared/constants.js";
+import { ADAPTER_TYPE, ADAPTER_LABEL, DEFAULT_MODEL } from "./shared/constants.js";
 
 export const type = ADAPTER_TYPE;
 export const label = ADAPTER_LABEL;
