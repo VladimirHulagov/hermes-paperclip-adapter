@@ -1,4 +1,3 @@
-import { readFile, readdir } from "node:fs/promises";
 import { DEFAULT_MODEL } from "../shared/constants.js";
 
 export { execute } from "./execute.js";
@@ -55,46 +54,4 @@ export const sessionCodec: AdapterSessionCodec = {
   },
 };
 
-interface SkillEntry {
-  name: string;
-  enabled: boolean;
-  source: string;
-}
-
-async function readSkillsFromDir(dir: string): Promise<SkillEntry[]> {
-  try {
-    const files = await readdir(dir);
-    const skills: SkillEntry[] = [];
-    for (const file of files) {
-      if (file.endsWith(".md")) {
-        skills.push({
-          name: file.replace(/\.md$/, ""),
-          enabled: true,
-          source: "profile",
-        });
-      }
-    }
-    return skills;
-  } catch {
-    return [];
-  }
-}
-
-export async function listSkills(ctx: any): Promise<any> {
-  const agentId = ctx?.agent?.id;
-  if (!agentId) {
-    return { desiredSkills: [], persistedSkills: [] };
-  }
-
-  const skillsDir = `/paperclip/hermes-instances/${agentId}/skills`;
-  const skills = await readSkillsFromDir(skillsDir);
-
-  return {
-    desiredSkills: skills,
-    persistedSkills: skills,
-  };
-}
-
-export async function syncSkills(ctx: any, desiredSkills: any[]): Promise<any> {
-  return listSkills(ctx);
-}
+export { listHermesSkills as listSkills, syncHermesSkills as syncSkills } from "./skills.js";
